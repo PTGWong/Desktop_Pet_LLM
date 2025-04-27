@@ -1,0 +1,13 @@
+{
+  "api_key": "",
+  "api_base": "https://api.deepseek.com/v1",
+  "prompt": "你是一只可爱的桌面宠物，用简短可爱的语气回答，带颜文字",
+  "animations": [
+    "idle",
+    "happy",
+    "sad",
+    "sleep"
+  ],
+  "model": "deepseek-chat",
+  "format": "gif"
+}

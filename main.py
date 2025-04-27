@@ -80,16 +80,23 @@ class DesktopPet(QMainWindow):
             self.movie.deleteLater()
             del self.movie
             self.label.clear()
+            self.label.update()  # 更新界面
+            QApplication.processEvents()  # 处理所有待处理的事件，确保UI更新
             self.label.repaint()  # 强制立即重绘
 
         # 延迟加载新动画
-        QTimer.singleShot(50, self._loadNewGIF)  # 50ms延迟确保资源释放
+        QTimer.singleShot(100, self._loadNewGIF)  # 增加延迟时间确保资源完全释放
 
     def _loadNewGIF(self):
         # 确保透明属性
         self.setAttribute(Qt.WA_TranslucentBackground)
-        self.centralWidget().setAttribute(Qt.WA_TranslucentBackground)
-        self.label.setAttribute(Qt.WA_TranslucentBackground)
+        self.centralWidget().setAttribute(Qt.WA_TranslucentBackground, True)
+        self.label.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.label.setStyleSheet("background: transparent; border: none;")
+
+        # 确保标签是空的
+        self.label.clear()
+        QApplication.processEvents()  # 处理所有待处理的事件
 
         fmt = self.config.get("animation_format", "gif")
         gif = f"pic/{self.current_action}.{fmt}"
