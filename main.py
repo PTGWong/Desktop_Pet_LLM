@@ -30,6 +30,7 @@ class DesktopPet(QMainWindow):
         super().__init__()
         self.loadConfig()
         self.initUI()
+        self.exiting = False  # 新增退出状态标识
 
     # ---------- 配置 ----------
     def loadConfig(self):
@@ -72,7 +73,6 @@ class DesktopPet(QMainWindow):
 
     # ---------- 动画 ----------
     def loadGIF(self):
-        # 清理旧资源
         if hasattr(self, "movie"):
             self.movie.stop()
             self.movie.disconnect()
@@ -80,23 +80,20 @@ class DesktopPet(QMainWindow):
             self.movie.deleteLater()
             del self.movie
             self.label.clear()
-            self.label.update()  # 更新界面
-            QApplication.processEvents()  # 处理所有待处理的事件，确保UI更新
-            self.label.repaint()  # 强制立即重绘
+            self.label.update()
+            QApplication.processEvents()
+            self.label.repaint()
 
-        # 延迟加载新动画
-        QTimer.singleShot(100, self._loadNewGIF)  # 增加延迟时间确保资源完全释放
+        QTimer.singleShot(100, self._loadNewGIF)
 
     def _loadNewGIF(self):
-        # 确保透明属性
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.centralWidget().setAttribute(Qt.WA_TranslucentBackground, True)
         self.label.setAttribute(Qt.WA_TranslucentBackground, True)
         self.label.setStyleSheet("background: transparent; border: none;")
 
-        # 确保标签是空的
         self.label.clear()
-        QApplication.processEvents()  # 处理所有待处理的事件
+        QApplication.processEvents()
 
         fmt = self.config.get("animation_format", "gif")
         gif = f"pic/{self.current_action}.{fmt}"
@@ -105,13 +102,11 @@ class DesktopPet(QMainWindow):
             QMessageBox.warning(self, "错误", f"缺少动画文件: {gif}")
             return
 
-        # 创建新动画对象
         self.movie = QMovie(gif)
-        self.movie.setCacheMode(QMovie.CacheNone)  # 禁用缓存
+        self.movie.setCacheMode(QMovie.CacheNone)
         self.movie.setScaledSize(QSize(200, 200))
         self.movie.frameChanged.connect(lambda: self.label.repaint())
 
-        # 显示动画
         self.label.setMovie(self.movie)
         self.movie.start()
 
@@ -128,8 +123,14 @@ class DesktopPet(QMainWindow):
             sub.addAction(ac)
         m.addAction(QAction("与宠物对话", self, triggered=self.chatWithPet))
         m.addAction(QAction("设置", self, triggered=self.openSettings))
-        m.addAction(QAction("退出", self, triggered=self.close))
+        m.addAction(QAction("退出", self, triggered=self.quitApp))  # 修改退出方式
         m.exec_(ev.globalPos())
+
+    # ---------- 退出方法 ----------
+    def quitApp(self):
+        self.exiting = True  # 标记退出状态
+        self.close()
+        QApplication.instance().quit()  # 强制终止应用
 
     # ---------- 对话 ----------
     def chatWithPet(self):
@@ -165,7 +166,7 @@ class DesktopPet(QMainWindow):
 
     # ---------- 拖拽 ----------
     def mousePressEvent(self, e):
-        if e.button() == Qt.LeftButton:
+        if e.button() == Qt.LeftButton and not self.exiting:  # 退出时禁用拖拽
             self.draggable, self.offset = True, e.pos()
     def mouseMoveEvent(self, e):
         if self.draggable: self.move(self.pos() + e.pos() - self.offset)
@@ -175,6 +176,6 @@ class DesktopPet(QMainWindow):
 # ───────────── main ──────────────
 if __name__ == "__main__":
     app = CustomApplication(sys.argv)
-    app.setQuitOnLastWindowClosed(False)
+    app.setQuitOnLastWindowClosed(True)  # 修改退出策略
     pet = DesktopPet(); pet.show()
     sys.exit(app.exec_())
