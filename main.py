@@ -1,4 +1,3 @@
-# main.py
 import sys, os, json, threading
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QLabel, QMenu, QAction,
@@ -11,11 +10,15 @@ from openai import OpenAI
 # ───────────── 自定义事件 ──────────────
 class ChatResponseEvent(QEvent):
     EVENT_TYPE = QEvent.registerEventType()
+
     def __init__(self, response: str, receiver: QWidget):
         super().__init__(self.EVENT_TYPE)
         self.response = response
         self._receiver = receiver
-    def receiver(self): return self._receiver
+
+    def receiver(self):
+        return self._receiver
+
 
 class CustomApplication(QApplication):
     def event(self, ev):
@@ -24,13 +27,14 @@ class CustomApplication(QApplication):
             return True
         return super().event(ev)
 
+
 # ───────────── 桌面宠物 ──────────────
 class DesktopPet(QMainWindow):
     def __init__(self):
         super().__init__()
         self.loadConfig()
         self.initUI()
-        self.exiting = False  # 新增退出状态标识
+        self.exiting = False  # 退出状态标识
 
     # ---------- 配置 ----------
     def loadConfig(self):
@@ -54,11 +58,12 @@ class DesktopPet(QMainWindow):
     def initUI(self):
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_NoSystemBackground)
 
         central = QWidget(self)
         central.setAttribute(Qt.WA_TranslucentBackground, True)
-        layout  = QVBoxLayout(central)
-        layout.setContentsMargins(0,0,0,0)
+        layout = QVBoxLayout(central)
+        layout.setContentsMargins(0, 0, 0, 0)
 
         self.label = QLabel(central)
         self.label.setStyleSheet("background: transparent; border: none;")
@@ -82,7 +87,6 @@ class DesktopPet(QMainWindow):
             self.label.clear()
             self.label.update()
             QApplication.processEvents()
-            self.label.repaint()
 
         QTimer.singleShot(100, self._loadNewGIF)
 
@@ -97,7 +101,7 @@ class DesktopPet(QMainWindow):
 
         fmt = self.config.get("animation_format", "gif")
         gif = f"pic/{self.current_action}.{fmt}"
-        
+
         if not os.path.exists(gif):
             QMessageBox.warning(self, "错误", f"缺少动画文件: {gif}")
             return
@@ -105,32 +109,47 @@ class DesktopPet(QMainWindow):
         self.movie = QMovie(gif)
         self.movie.setCacheMode(QMovie.CacheNone)
         self.movie.setScaledSize(QSize(200, 200))
-        self.movie.frameChanged.connect(lambda: self.label.repaint())
+
+        # 每帧更新透明遮罩
+        self.movie.frameChanged.connect(self.updateMask)
 
         self.label.setMovie(self.movie)
         self.movie.start()
 
-    def changeAction(self, act): 
+        # 初次加载后立即更新一次遮罩
+        QTimer.singleShot(0, self.updateMask)
+
+    # ---------- 更新窗口透明遮罩 ----------
+    def updateMask(self):
+        if not hasattr(self, "movie"):
+            return
+        pix = self.movie.currentPixmap()
+        if pix.isNull():
+            return
+        self.setMask(pix.mask())
+
+    def changeAction(self, act):
         self.current_action = act
         self.loadGIF()
 
     # ---------- 右键菜单 ----------
     def contextMenuEvent(self, ev):
-        m = QMenu(self); sub = m.addMenu("切换动作")
+        m = QMenu(self)
+        sub = m.addMenu("切换动作")
         for a in self.config["actions"]:
             ac = QAction(a, self)
             ac.triggered.connect(lambda _, x=a: self.changeAction(x))
             sub.addAction(ac)
         m.addAction(QAction("与宠物对话", self, triggered=self.chatWithPet))
         m.addAction(QAction("设置", self, triggered=self.openSettings))
-        m.addAction(QAction("退出", self, triggered=self.quitApp))  # 修改退出方式
+        m.addAction(QAction("退出", self, triggered=self.quitApp))
         m.exec_(ev.globalPos())
 
-    # ---------- 退出方法 ----------
+    # ---------- 退出 ----------
     def quitApp(self):
-        self.exiting = True  # 标记退出状态
+        self.exiting = True
         self.close()
-        QApplication.instance().quit()  # 强制终止应用
+        QApplication.instance().quit()
 
     # ---------- 对话 ----------
     def chatWithPet(self):
@@ -138,15 +157,16 @@ class DesktopPet(QMainWindow):
         if ok and txt:
             if not self.config["openai_api_key"]:
                 QMessageBox.warning(self, "错误", "请先在设置中配置 API 密钥")
-                self.openSettings(); return
+                self.openSettings()
+                return
             threading.Thread(target=self.processChat, args=(txt,), daemon=True).start()
 
     def processChat(self, utext):
         try:
             r = self.client.chat.completions.create(
                 model=self.config["model"],
-                messages=[{"role":"system","content":self.config["pet_prompt"]},
-                          {"role":"user","content":utext}]
+                messages=[{"role": "system", "content": self.config["pet_prompt"]},
+                          {"role": "user", "content": utext}]
             )
             rep = r.choices[0].message.content
         except Exception as e:
@@ -161,21 +181,26 @@ class DesktopPet(QMainWindow):
                                        text=self.config["openai_api_key"])
         if ok:
             self.config["openai_api_key"] = key
-            json.dump(self.config, open("config.json","w",encoding="utf-8"), indent=4, ensure_ascii=False)
+            json.dump(self.config, open("config.json", "w", encoding="utf-8"), indent=4, ensure_ascii=False)
             self.client = OpenAI(api_key=key, base_url=self.config["openai_api_base"])
 
     # ---------- 拖拽 ----------
     def mousePressEvent(self, e):
-        if e.button() == Qt.LeftButton and not self.exiting:  # 退出时禁用拖拽
+        if e.button() == Qt.LeftButton and not self.exiting:
             self.draggable, self.offset = True, e.pos()
+
     def mouseMoveEvent(self, e):
-        if self.draggable: self.move(self.pos() + e.pos() - self.offset)
-    def mouseReleaseEvent(self, _): self.draggable = False
+        if self.draggable:
+            self.move(self.pos() + e.pos() - self.offset)
+
+    def mouseReleaseEvent(self, _):
+        self.draggable = False
 
 
 # ───────────── main ──────────────
 if __name__ == "__main__":
     app = CustomApplication(sys.argv)
-    app.setQuitOnLastWindowClosed(True)  # 修改退出策略
-    pet = DesktopPet(); pet.show()
+    app.setQuitOnLastWindowClosed(True)
+    pet = DesktopPet()
+    pet.show()
     sys.exit(app.exec_())
