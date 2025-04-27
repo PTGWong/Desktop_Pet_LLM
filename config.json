@@ -1,0 +1,8 @@
+{
+    "openai_api_key": "your-api-key",
+    "openai_api_base": "https://api.deepseek.com/v1",
+    "pet_prompt": "你是一个可爱的桌面宠物小豆泥，性格活泼开朗，说话方式可爱，喜欢用颜文字和表情。请用简短的语言回答用户的问题。",
+    "actions": ["idle", "happy", "sad", "sleep"],
+    "model": "deepseek-chat",
+    "animation_format": "gif"
+}
