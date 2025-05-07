@@ -17,6 +17,7 @@ from openai import OpenAI
 
 # ------------ 打包资源助手 ------------------------------------------
 def rsrc(path: str) -> str:
+    """在开发环境或 PyInstaller 打包后都可获得资源绝对路径"""
     base = getattr(sys, "_MEIPASS", os.path.abspath("."))
     return os.path.join(base, path)
 # --------------------------------------------------------------------
@@ -77,25 +78,41 @@ class DesktopPet(QMainWindow):
 
     # ---------- 配置 ----------
     def loadConfig(self):
-        cfg = rsrc("config.json")
-        if os.path.exists(cfg):
-            self.config = json.load(open(cfg, encoding="utf-8"))
+        cfg_path = rsrc("config.json")
+        if os.path.exists(cfg_path):
+            self.config = json.load(open(cfg_path, encoding="utf-8"))
         else:
             self.config = {
                 "openai_api_key": "",
                 "openai_api_base": "https://api.deepseek.com/v1",
                 "pet_prompt": "你是一个可爱的桌面宠物小豆泥，性格活泼开朗，说话方式可爱。",
-                "actions": ["idle", "happy", "sad", "sleep"],
+                "actions": ["idle"],
                 "model": "deepseek-chat",
                 "animation_format": "gif"
             }
-            json.dump(self.config, open(cfg, "w", encoding="utf-8"),
+            json.dump(self.config, open(cfg_path, "w", encoding="utf-8"),
                       indent=4, ensure_ascii=False)
+
+        # **自动扫描 pic 目录，收集所有 gif 动作为 actions**
+        self.config["actions"] = self.discoverActions()
 
         self.client = OpenAI(
             api_key=self.config.get("openai_api_key", ""),
             base_url=self.config.get("openai_api_base", "")
         )
+
+    def discoverActions(self):
+        """扫描 pic 文件夹中所有动画文件，返回动作列表"""
+        pic_dir = rsrc("pic")
+        fmt = self.config.get("animation_format", "gif")
+        if not os.path.isdir(pic_dir):
+            return self.config.get("actions", [])
+        acts = sorted(
+            os.path.splitext(f)[0]
+            for f in os.listdir(pic_dir)
+            if f.lower().endswith(f".{fmt.lower()}")
+        )
+        return acts or self.config.get("actions", [])
 
     # ---------- UI ----------
     def initUI(self):
@@ -105,8 +122,9 @@ class DesktopPet(QMainWindow):
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_NoSystemBackground)
 
-        if os.path.exists(rsrc("DesktopPet.icns")):
-            self.setWindowIcon(QIcon(rsrc("DesktopPet.icns")))
+        icon_path = rsrc("DesktopPet.icns")
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
 
         central = QWidget(self)
         central.setAttribute(Qt.WA_TranslucentBackground, True)
@@ -116,7 +134,7 @@ class DesktopPet(QMainWindow):
         lay.addWidget(self.label)
         self.setCentralWidget(central)
 
-        self.current_action = "idle"
+        self.current_action = "idle" if "idle" in self.config["actions"] else self.config["actions"][0]
         self.loadGIF()
         self.resize(200,200)
         self.draggable = False
@@ -130,7 +148,8 @@ class DesktopPet(QMainWindow):
     def _loadNewGIF(self):
         gif = rsrc(f"pic/{self.current_action}.{self.config.get('animation_format','gif')}")
         if not os.path.exists(gif):
-            QMessageBox.warning(self,"错误",f"缺少动画文件: {gif}"); return
+            QMessageBox.warning(self,"错误",f"缺少动画文件: {gif}")
+            return
         self.movie = QMovie(gif); self.movie.setScaledSize(QSize(200,200))
         self.movie.frameChanged.connect(self.updateMask)
         self.label.setMovie(self.movie); self.movie.start()
@@ -152,17 +171,25 @@ class DesktopPet(QMainWindow):
         m.addAction("退出", self.quitApp)
         m.exec_(ev.globalPos())
 
-    def setAction(self,act): self.current_action=act; self.loadGIF()
+    def setAction(self, act):
+        if act != self.current_action:
+            self.current_action = act
+            self.loadGIF()
 
     # ---------- 退出 ----------
-    def quitApp(self): self.exiting=True; self.close(); QApplication.quit()
+    def quitApp(self):
+        self.exiting=True
+        self.close()
+        QApplication.quit()
 
     # ---------- 对话 ----------
     def chatWithPet(self):
         txt, ok = QInputDialog.getText(self,"对话","请输入你想说的话:")
         if ok and txt:
             if not self.config["openai_api_key"]:
-                QMessageBox.warning(self,"错误","请先配置 API 设置"); self.openSettings(); return
+                QMessageBox.warning(self,"错误","请先配置 API 设置")
+                self.openSettings()
+                return
             threading.Thread(target=self._chat, args=(txt,), daemon=True).start()
 
     def _chat(self, msg):
@@ -180,7 +207,8 @@ class DesktopPet(QMainWindow):
     # ---------- 设置 ----------
     def openSettings(self):
         dlg = SettingsDialog(self.config, self)
-        if dlg.exec_() != QDialog.Accepted: return
+        if dlg.exec_() != QDialog.Accepted:
+            return
         key, base, model = dlg.values()
         if key:   self.config["openai_api_key"]  = key
         if base:  self.config["openai_api_base"] = base
@@ -195,14 +223,19 @@ class DesktopPet(QMainWindow):
     # ---------- 拖拽 ----------
     def mousePressEvent(self,e):
         if e.button()==Qt.LeftButton and not self.exiting:
-            self.draggable=True; self.offset=e.pos()
+            self.draggable=True
+            self.offset=e.pos()
     def mouseMoveEvent(self,e):
-        if self.draggable: self.move(self.pos()+e.pos()-self.offset)
-    def mouseReleaseEvent(self,_): self.draggable=False
+        if self.draggable:
+            self.move(self.pos()+e.pos()-self.offset)
+    def mouseReleaseEvent(self,_):
+        self.draggable=False
 
 
 # ───────────── main ──────────────
 if __name__=="__main__":
-    app = CustomApplication(sys.argv); app.setQuitOnLastWindowClosed(True)
-    pet = DesktopPet(); pet.show()
+    app = CustomApplication(sys.argv)
+    app.setQuitOnLastWindowClosed(True)
+    pet = DesktopPet()
+    pet.show()
     sys.exit(app.exec_())
